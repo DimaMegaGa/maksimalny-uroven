@@ -1,0 +1,25 @@
+services:
+  school:
+    image: maks-level:local
+    build: .
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - maks-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  ministry:
+    image: maks-level:local
+    command: ["--site", "ministry", "--port", "8767"]
+    depends_on:
+      school:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8767:8767"
+    volumes:
+      - maks-data:/data
+volumes:
+  maks-data:

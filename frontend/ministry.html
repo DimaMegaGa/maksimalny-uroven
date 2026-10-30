@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#21164b">
+  <meta name="description" content="МАКСимальный уровень: задания, достижения и управление доступом образовательных организаций.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261030-avatar1">
+  <title>Министерство образования — портал доступа</title>
+  <link rel="stylesheet" href="style.css?v=20261030-avatar1">
+  <link rel="stylesheet" href="server-design.css?v=20261030-avatar1">
+  <link rel="stylesheet" href="refinements.css?v=20261030-avatar1">
+  <link rel="stylesheet" href="responsive.css?v=20261030-avatar1">
+  <link rel="stylesheet" href="access.css?v=20261030-avatar1">
+  <link rel="stylesheet" href="presentation.css?v=20261030-avatar1">
+  <link rel="stylesheet" href="ministry-site.css?v=20261030-avatar1">
+</head>
+  <body class="signed-out ministry-site">
+    <noscript><div class="no-script">Для работы платформы включите JavaScript в настройках браузера и обновите страницу.</div></noscript>
+    <section id="auth-screen" aria-label="Вход в приложение">
+    </section>
+    <aside>
+      <a class="sidebar-brand" href="#home" aria-label="Портал министерства — главная"><span>Министерство</span><strong>образования</strong></a>
+      <nav id="nav">
+      </nav>
+      <div class="aside-bottom">
+        <div class="demo">
+          УПРАВЛЕНИЕ ДОСТУПОМ
+        </div>
+        <button id="logout" class="logout-link">
+          ↪ Выйти из аккаунта
+        </button>
+        <div class="person">
+          <button class="account-avatar" aria-label="Открыть профиль"></button>
+          <div id="identity">
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="shell">
+      <header>
+        <span class="school">
+          ◈
+          &nbsp;
+          Школьное пространство
+        </span>
+        <span class="header-right">
+          <span class="live">
+            ● Управление доступом
+          </span>
+          <button id="notification-bell" class="notification-bell" aria-label="Уведомления"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"/><path d="M10 21h4"/></svg><span id="notification-count" hidden></span></button>
+          <button class="account-avatar" aria-label="Открыть профиль"></button>
+        </span>
+      </header>
+      <main id="app">
+      </main>
+      <footer>
+        Портал министерства
+        <span>
+          Выдача доступа образовательным организациям
+        </span>
+      </footer>
+    </div>
+    <dialog id="modal">
+    </dialog>
+    <div id="toast" role="status">
+    </div>
+    <script src="site-config.js?v=20261030-avatar1"></script>
+    <script src="director.js?v=20261030-avatar1"></script>
+    <script src="ministry.js?v=20261030-avatar1"></script>
+    <script src="app.js?v=20261030-avatar1">
+    </script>
+  </body>
+</html>

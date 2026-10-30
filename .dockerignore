@@ -1,0 +1,9 @@
+**
+!requirements.txt
+!backend/
+!backend/*.py
+!backend/schema.sql
+!frontend/
+!frontend/**
+!templates/
+!templates/**

@@ -1,0 +1,14 @@
+.ministry-site { --purple:#69539b; }
+.ministry-site .sidebar-brand > span { color:#d5c6f1; font-size:14px; letter-spacing:.3px; }
+.ministry-site .sidebar-brand strong { font-size:23px; color:#fff; }
+.ministry-site .auth-roles { display:none; }
+.ministry-site .auth-main-title { font-size:clamp(32px,4.2vw,58px); line-height:1.12; }
+.ministry-site .auth-brand-panel > p { max-width:420px; }
+.ministry-site .auth-main-title span { color:#c5b4ed; }
+.ministry-site .auth-card { border-top:4px solid #9c80c6; }
+.ministry-site .package-heading .tile { background:linear-gradient(140deg,#ece3fa,#e5e4fb); }
+.ministry-site footer { gap:14px; }
+@media(min-width:768px) and (max-width:1199px) {
+  .ministry-site .sidebar-brand > span { font-size:10px; }
+  .ministry-site .sidebar-brand strong { font-size:11px; }
+}

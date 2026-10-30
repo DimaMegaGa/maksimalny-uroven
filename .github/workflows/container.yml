@@ -1,0 +1,29 @@
+name: Container checks and image
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t maks-level:submission .
+      - name: Integration tests in Linux container
+        run: docker run --rm --entrypoint python maks-level:submission backend/test_container.py
+      - name: Compose startup
+        run: |
+          docker compose up -d --wait --wait-timeout 90
+          curl --fail http://127.0.0.1:8765/api/health
+          curl --fail http://127.0.0.1:8767/api/health
+      - if: always()
+        run: docker compose down
+      - run: docker save -o maks-level-image.tar maks-level:submission
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maks-level-image
+          path: maks-level-image.tar
+          retention-days: 14

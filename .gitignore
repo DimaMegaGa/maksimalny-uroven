@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+data/
+uploads/
+backups/
+logs/
+server.pid
+ministry-server.pid
+.venv/
+runtime/
+*.key
+*.sqlite3*
+*.db
+*.tar
+*.tar.gz

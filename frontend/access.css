@@ -1,0 +1,67 @@
+.director-class[hidden] { display: none; }
+.director-organizations, .director-legacy, .director-guide { margin-bottom: 22px; }
+.director-guide ol { padding-left: 22px; color: #806e91; line-height: 1.9; }
+.director-guide li { margin-bottom: 10px; }
+.director-legacy { background: #fcf8ef; border-color: #f0e2c5; }
+.director-legacy p { font-size: 14px; color: #8b7a5d; }
+.director-account-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 22px 0; border-bottom: 1px solid #eee7f5; }
+.director-account-row:last-child { border: 0; }
+.director-account-row .btn { flex-shrink: 0; }
+.director-account-row h3 { font-size: 15px; }
+.director-code-hint { display: flex; gap: 14px; background: #f4eefa; border: 1px solid #e7dcf4; padding: 18px; border-radius: 12px; }
+.director-code-hint > span { color: #9874be; font-size: 26px; }
+.director-code-hint p { margin: 0; font-size: 13px; color: #8a729d; }
+.issued-code-body { padding: 24px; display: grid; gap: 16px; }
+.issued-code-body h3 { margin: 0; font-size: 21px; }
+.issued-code-body p { margin: 0; }
+.issued-code-body .notice { padding: 16px; font-size: 13px; }
+.issued-check { display: grid; place-items: center; width: 54px; height: 54px; background: #eee5fa; color: #9873bf; border-radius: 50%; font-size: 27px; }
+#issued-code { font-family: ui-monospace, Consolas, monospace; letter-spacing: .2px; font-size: 14px; background: #f8f5fd; }
+.auth-roles { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.role-login-tabs button { font-size: 12px; padding-inline: 8px; }
+#auth-screen {
+  align-items: center;
+  background:
+    radial-gradient(ellipse at 12% 12%, #7250ab45, transparent 45%),
+    radial-gradient(ellipse at 95% 85%, #7753aa40, transparent 48%),
+    repeating-linear-gradient(138deg, transparent 0 90px, #cbb0f209 91px 92px, transparent 93px 180px),
+    linear-gradient(140deg,#1d1833,#2d2147 58%,#211a38);
+}
+#auth-screen .auth-bottom { width: 100%; justify-content: center; text-align: center; }
+#auth-screen::before { background: none; opacity: 1; inset: -360px auto auto -180px; width: 680px; height: 680px; border: 1px solid #cfb1f21f; border-radius: 50%; box-shadow: 0 0 0 55px #ba9cdd08,0 0 0 110px #ba9cdd05; }
+#auth-screen::after { content: ''; position: absolute; z-index: -1; width: 580px; height: 580px; bottom: -320px; right: -260px; border: 1px solid #cfb1f21c; border-radius: 50%; box-shadow: 0 0 0 45px #ba9cdd08,0 0 0 90px #ba9cdd05; pointer-events: none; }
+.role-login-card { box-shadow: 0 22px 70px #0c071f50, inset 0 1px 0 #fff; }
+.auth-error { overflow-wrap: anywhere; }
+@media(max-width:767px) {
+  .director-account-row { gap: 12px; }
+  .director-account-row .btn { margin-left: auto; }
+  .issued-code-body { padding: 20px 16px; }
+  .issued-code-body h3 { font-size: 19px; }
+  .role-login-tabs button { font-size: 12px; padding-inline: 4px; }
+}
+@media(max-width:479px) {
+  .director-account-row .btn { width: 100%; }
+}
+.auth-roles { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.package-list { display:grid; gap:18px; margin-top:22px; }
+.package-card { min-width:0; }
+.package-heading { display:flex; flex-wrap:wrap; align-items:center; gap:14px; }
+.package-heading > div { flex:1; min-width:0; }
+.package-heading h3 { overflow-wrap:anywhere; }
+.package-heading .pill { white-space:normal; }
+.package-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:16px; }
+.package-sheet { max-width:1000px; width:calc(100vw - 32px); }
+.package-table-wrap { max-width:100%; overflow:auto; border:1px solid #e8def2; border-radius:12px; }
+.package-table { width:100%; border-collapse:collapse; font-size:13px; }
+.package-table th,.package-table td { text-align:left; padding:14px; border-bottom:1px solid #eee6f6; }
+.package-table th { color:#79608f; background:#f6f1fc; }
+.package-code { min-width:355px; font-family:Consolas,monospace; font-size:13px; }
+.package-instructions { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; padding:18px; border-radius:12px; background:#f6f1fc; font-size:14px; }
+.import-errors { padding:18px 18px 18px 34px; color:#ad365f; background:#fff3f7; border-radius:12px; }
+.roster-sample { padding:12px 18px; border-radius:12px; background:#f6f1fc; overflow-wrap:anywhere; font-size:14px; }
+@media(max-width:767px) {
+  .package-actions > .btn { width:100%; }
+  .package-sheet { width:calc(100vw - 16px); }
+  .package-heading .pill { margin-left:0; }
+  .package-heading > div { flex-basis:calc(100% - 65px); }
+}
