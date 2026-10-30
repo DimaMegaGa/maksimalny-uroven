@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import ssl
 import time
 import urllib.request
 import uuid
@@ -16,6 +17,17 @@ DATA = ROOT / 'runtime' / 'showcase'
 STATE = DATA / 'status.json'
 STOP = DATA / 'stop'
 BINARY = ROOT / 'tools' / 'cloudflared.exe'
+
+
+def https_context():
+    local = ROOT / 'tools' / 'python-packages'
+    if local.is_dir() and str(local) not in sys.path:
+        sys.path.insert(0, str(local))
+    try:
+        import certifi
+    except ImportError:
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def seed():
@@ -139,7 +151,7 @@ def controller(provider):
                 try:
                     request = urllib.request.Request(state[site] + '/api/health',
                         headers={'serveo-skip-browser-warning': 'true'})
-                    with urllib.request.urlopen(request, timeout=4) as response:
+                    with urllib.request.urlopen(request, timeout=4, context=https_context()) as response:
                         online.append(json.load(response).get('site') == site)
                 except (OSError, ValueError):
                     online.append(False)
