@@ -13,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Client regression checks
         run: node tests/test-client.cjs
+      - name: Netlify API proxy checks
+        run: node tests/test-netlify.mjs
+      - name: Netlify publish boundary checks
+        run: python scripts/test_netlify_build.py
       - run: docker build -t maks-level:submission .
       - name: Integration tests in Linux container
         run: docker run --rm --entrypoint python maks-level:submission backend/test_container.py

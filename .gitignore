@@ -15,3 +15,6 @@ runtime/
 *.tar
 *.tar.gz
 tools/
+netlify-dist/
+.netlify/
+.netlify-build-*/
