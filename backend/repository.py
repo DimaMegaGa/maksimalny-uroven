@@ -152,6 +152,9 @@ class Repository(AccessControl, Ministry):
         db['users'] = [u for u in db['users'] if key(u['school']) == key(user['school'])]
         inactive = {r[0] for r in c.execute('SELECT user_id FROM account_access WHERE active=0')}
         db['users'] = [u for u in db['users'] if u['id'] not in inactive]
+        completed = dict(c.execute("SELECT user_id,COUNT(*) FROM submissions WHERE status='approved' GROUP BY user_id").fetchall())
+        for person in db['users']:
+            person['completedCount'] = completed.get(person['id'], 0)
         db['tasks'] = [t for t in db['tasks'] if t['teacherId'] == user['id'] or self.visible(t, user)]
         task_ids = {t['id'] for t in db['tasks']}
         db['submissions'] = [s for s in db['submissions'] if s['userId'] == user['id'] or user['role'] == 'teacher' and s['taskId'] in task_ids]

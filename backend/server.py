@@ -43,7 +43,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     @property
     def cookie_name(self):
-        return 'maks_ministry_session' if self.site == 'ministry' else 'maks_session'
+        name = 'maks_ministry_session' if self.site == 'ministry' else 'maks_session'
+        default_port = 8767 if self.site == 'ministry' else 8765
+        return name if self.server.server_port == default_port else f'{name}_{self.server.server_port}'
 
     def token(self):
         try:

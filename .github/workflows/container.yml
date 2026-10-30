@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Client regression checks
+        run: node tests/test-client.cjs
       - run: docker build -t maks-level:submission .
       - name: Integration tests in Linux container
         run: docker run --rm --entrypoint python maks-level:submission backend/test_container.py

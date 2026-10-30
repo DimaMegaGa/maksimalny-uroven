@@ -15,30 +15,49 @@ const SUBJECTS = [
 ];
 const emptyDB = () => ({ users: [], tasks: [], submissions: [], notifications: [], exchanges: [], ledger: [] });
 let db = emptyDB(), session = null, revision = 0, admin = null, syncing = false, committing = false;
+let refreshTask = null, avatarBusy = false, sessionGeneration = 0;
 async function api(path, body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
   const response = await fetch('/api/' + path, {
     method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-    headers: {'Content-Type': 'application/json', 'X-Maks-Request': '1'},
+    headers: {'Content-Type': 'application/json', 'X-Maks-Request': '1', ...(location.hostname.endsWith('.serveousercontent.com') ? {'serveo-skip-browser-warning':'true'} : {})},
+    signal: controller.signal,
     ...(body === undefined ? {} : {body: JSON.stringify(body)})
   });
-  const payload = await response.json();
+  let payload;
+  try { payload = await response.json(); }
+  catch { const error = new Error('Сервер временно недоступен. Изменения не подтверждены. Проверьте актуальную ссылку и повторите попытку.'); error.status = 503; throw error; }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Сервер вернул некорректный ответ. Повторите попытку.');
   if (!response.ok) { const error = new Error(payload.error || 'Ошибка сервера'); error.status = response.status; throw error; }
   return payload;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Сервер не ответил вовремя. Проверьте состояние действия перед повторной отправкой.');
+    if (error instanceof TypeError) throw new Error('Нет связи с сервером. Изменения не подтверждены. Проверьте подключение и актуальную ссылку.');
+    throw error;
+  } finally { clearTimeout(timeout); }
 }
 function acceptState(state) { db = state.db; revision = state.revision; admin = state.admin || null; session = {userId: state.userId}; }
-async function refreshFromServer(force = false) {
-  if (syncing || committing || processing) return;
+function refreshFromServer(force = false) {
+  if (committing || processing || avatarBusy) return Promise.resolve();
+  if (refreshTask) return refreshTask;
+  const generation = sessionGeneration;
   syncing = true;
+  refreshTask = (async () => {
   try {
     const state = await api('state');
+    if (generation !== sessionGeneration || committing) return;
     if (force || !session || state.revision !== revision) {
       if (!force && (modal.open || ['create', 'ministryUpload'].includes(page()) || photoBusy)) return;
       acceptState(state); render();
     }
   } catch (error) {
-    if (error.status === 401) { if (session) { session = null; db = emptyDB(); render(); } }
+    if (error.status === 401) { if (session && generation === sessionGeneration) { session = null; db = emptyDB(); admin = null; closeModal(); render(); } }
     else if (force) toast(error.message);
-  } finally { syncing = false; }
+  } finally { syncing = false; refreshTask = null; }
+  })();
+  return refreshTask;
 }
 let peopleRole = 'teacher';
 let taskTab = 'available', ratingScope = 'class', search = '', subjectFilter = 'Все предметы';
@@ -63,6 +82,7 @@ const schoolKey = value => String(value || '').trim().toLocaleLowerCase('ru-RU')
 const grade = value => String(value || '').match(/^\s*(\d{1,2})/)?.[1] || '';
 const sameSchool = (a, b) => schoolKey(a.school) === schoolKey(b.school);
 const levelName = points => points >= 120 ? 'Лидер' : points >= 60 ? 'Активный' : 'Новичок';
+const givenName = user => { const parts = (user?.name || '').trim().split(/\s+/); return parts[1] || parts[0] || ''; };
 const balance = userId => db.ledger.filter(row => row.userId === userId).reduce((sum, row) => sum + row.amount, 0);
 const experience = userId => db.ledger.filter(row => row.userId === userId && row.amount > 0).reduce((sum, row) => sum + row.amount, 0);
 const visibleTo = (task, user) => user?.role === 'student' && sameSchool(task, user) && (
@@ -78,6 +98,7 @@ const students = () => db.users.filter(user => user.role === 'student' && sameSc
 const myNotifications = () => db.notifications.filter(row => row.userId === currentUser()?.id).sort((a, b) => b.createdAt - a.createdAt);
 
 async function mutate(change) {
+  if (refreshTask) await refreshTask;
   if (committing) throw new Error('Дождитесь сохранения предыдущего действия');
   committing = true;
   let before;
@@ -112,6 +133,9 @@ function go(target, tab) {
   if (tab) { taskTab = tab; if (target === 'tasks') { search = ''; subjectFilter = 'Все предметы'; } }
   if (location.hash.slice(1) === target) render(); else location.hash = target;
   window.scrollTo(0, 0);
+}
+function openSubjectTasks(subject) {
+  taskTab = 'available'; search = ''; subjectFilter = subject; go('tasks');
 }
 function empty(title, description = '') {
   return `<div class="empty"><span class="empty-symbol">✧</span><h3>${esc(title)}</h3><p>${esc(description)}</p></div>`;
@@ -315,7 +339,7 @@ function showLogin() {
     const fields = Object.fromEntries(new FormData(event.target));
     Object.keys(fields).forEach(k => fields[k] = fields[k].trim());
     processing = true; const submit = $('button[type="submit"]', event.target); submit.disabled = true;
-    try { acceptState(await api('login', {...fields,role:loginRole})); location.hash = 'home'; render(); }
+    try { const state = await api('login', {...fields,role:loginRole}); sessionGeneration++; acceptState(state); location.hash = 'home'; render(); }
     catch (error) { $('#login-error').textContent = error instanceof TypeError ? 'Не удалось связаться с платформой. Проверьте подключение и повторите вход.' : error.message; }
     finally { processing = false; submit.disabled = false; }
   };
@@ -324,7 +348,8 @@ function showLogin() {
 async function logout() {
   try { await api('logout', {}); }
   catch (error) { toast(error.message); return; }
-  session = null; db = emptyDB(); closeModal(); loginRole = MINISTRY_SITE ? 'ministry' : 'student'; admin = null;
+  sessionGeneration++; session = null; db = emptyDB(); closeModal(); loginRole = MINISTRY_SITE ? 'ministry' : 'student'; admin = null;
+  taskTab = 'available'; subjectFilter = 'Все предметы'; search = ''; peopleRole = 'teacher';
   location.hash = 'login'; render();
 }
 
@@ -334,7 +359,7 @@ function home() {
   const done = db.submissions.filter(row => row.userId === user.id && row.status === 'approved').length;
   const points = experience(user.id);
   const rank = ranking('class').findIndex(row => row.id === user.id) + 1;
-  return heading(`Привет, ${esc(user.name.split(' ')[0])}!`, 'Новый день — новые возможности.') + `<section class="hero"><div><h2>Маленькие действия.<br>Большие достижения.</h2><p>Выбирай интересное, участвуй в школьной жизни<br>и открывай свой следующий уровень.</p><button class="btn light" data-go="tasks">К заданиям ↗</button></div><div class="hero-art"><img class="hero-medal" src="/assets/hero-medal.png" width="112" height="112" alt="Медаль за достижения"></div></section><div class="metrics">${metric('✦', 'gold', 'Текущий баланс', `${balance(user.id)} <span>баллов</span>`, 'exchange')}${metric('✓', 'green', 'Выполненные задания', done, 'tasks', 'completed')}${metric('↗', '', 'Место в классе', points > 0 ? rank : '—', 'rating')}</div><div class="columns"><section class="card"><div class="cardhead"><h2>Твои задания</h2><button class="link" data-go="tasks">Смотреть все →</button></div>${myTasks().filter(task => taskStatus(task) !== 'approved').slice(0, 3).map(taskRow).join('') || empty('Заданий пока нет', 'Они появятся, когда учитель опубликует задание для тебя.')}</section><section class="card"><h2>Твой следующий уровень</h2><div class="level-head"><span class="tile gold">🏅</span><div><strong>${levelName(points)}</strong><small>${points} баллов опыта</small></div></div><div class="progress-label"><span>До уровня «Лидер»</span><span>${Math.min(100, Math.round(points / 120 * 100))}%</span></div><div class="progress"><i style="width:${Math.min(100, points / 120 * 100)}%"></i></div><p class="level-foot">Опыт начисляется после подтверждения учителем. Обмен баллов не уменьшает твой уровень.</p></section></div>`;
+  return heading(`Привет, ${esc(givenName(user))}!`, 'Новый день — новые возможности.') + `<section class="hero"><div><h2>Маленькие действия.<br>Большие достижения.</h2><p>Выбирай интересное, участвуй в школьной жизни<br>и открывай свой следующий уровень.</p><button class="btn light" data-go="tasks">К заданиям ↗</button></div><div class="hero-art"><img class="hero-medal" src="/assets/hero-medal.png" width="112" height="112" alt="Медаль за достижения"></div></section><div class="metrics">${metric('✦', 'gold', 'Текущий баланс', `${balance(user.id)} <span>баллов</span>`, 'exchange')}${metric('✓', 'green', 'Выполненные задания', done, 'tasks', 'completed')}${metric('↗', '', 'Место в классе', points > 0 ? rank : '—', 'rating')}</div><div class="columns"><section class="card"><div class="cardhead"><h2>Твои задания</h2><button class="link" data-go="tasks">Смотреть все →</button></div>${myTasks().filter(task => taskStatus(task) !== 'approved').slice(0, 3).map(taskRow).join('') || empty('Заданий пока нет', 'Они появятся, когда учитель опубликует задание для тебя.')}</section><section class="card"><h2>Твой следующий уровень</h2><div class="level-head"><span class="tile gold">🏅</span><div><strong>${levelName(points)}</strong><small>${points} баллов опыта</small></div></div><div class="progress-label"><span>До уровня «Лидер»</span><span>${Math.min(100, Math.round(points / 120 * 100))}%</span></div><div class="progress"><i style="width:${Math.min(100, points / 120 * 100)}%"></i></div><p class="level-foot">Опыт начисляется после подтверждения учителем. Обмен баллов не уменьшает твой уровень.</p></section></div>`;
 }
 function teacherHome() {
   const tasks = myTasks();
@@ -348,15 +373,15 @@ function reviewRow(submission) {
 function tasks() {
   const teacher = isTeacher();
   let tasks = myTasks().filter(task => (subjectFilter === 'Все предметы' || task.subject === subjectFilter) && task.title.toLocaleLowerCase('ru-RU').includes(search.toLocaleLowerCase('ru-RU')));
-  const tabs = teacher ? [['available', 'Опубликованные'], ['pending', 'На проверке'], ['completed', 'Подтверждённые']] : [['available', 'Доступные'], ['pending', 'На проверке'], ['completed', 'Выполненные задания']];
+  const tabs = teacher ? [['available', 'Опубликованные'], ['pending', 'На проверке'], ['completed', 'Подтверждённые']] : [['available', 'Доступные'], ['pending', 'На проверке'], ['completed', 'Выполненные задания'], ['declined', 'Отклонённые']];
   let content;
   if (teacher && taskTab !== 'available') {
-    content = db.submissions.filter(row => tasks.some(task => task.id === row.taskId) && row.status === (taskTab === 'pending' ? 'pending' : 'approved')).map(row => taskTab === 'pending' ? reviewRow(row) : `<article class="task"><span class="tile green">${subjectSymbol(db.tasks.find(task => task.id === row.taskId)?.subject)}</span><div class="task-body"><h3>${esc(db.tasks.find(task => task.id === row.taskId)?.title)}</h3><span class="meta">${esc(db.users.find(user => user.id === row.userId)?.name)}</span></div><span class="pill green">Выполнено</span></article>`).join('');
+    content = db.submissions.filter(row => tasks.some(task => task.id === row.taskId) && row.status === (taskTab === 'pending' ? 'pending' : 'approved')).map(row => taskTab === 'pending' ? reviewRow(row) : `<article class="task"><span class="tile green">${subjectSymbol(db.tasks.find(task => task.id === row.taskId)?.subject)}</span><div class="task-body"><h3>${esc(db.tasks.find(task => task.id === row.taskId)?.title)}</h3><span class="meta">${esc(db.users.find(user => user.id === row.userId)?.name)}</span></div><button class="btn outline" data-review="${row.id}">Посмотреть работу</button></article>`).join('');
   } else {
-    if (!teacher) tasks = tasks.filter(task => taskTab === 'completed' ? taskStatus(task) === 'approved' : taskTab === 'pending' ? taskStatus(task) === 'pending' : ['available', 'rejected'].includes(taskStatus(task)));
+    if (!teacher) tasks = tasks.filter(task => taskTab === 'completed' ? taskStatus(task) === 'approved' : taskTab === 'pending' ? taskStatus(task) === 'pending' : taskTab === 'declined' ? taskStatus(task) === 'declined' : ['available', 'rejected'].includes(taskStatus(task)));
     content = tasks.map(taskRow).join('');
   }
-  return heading('Задания', teacher ? 'Публикуйте задания и проверяйте результаты.' : 'От полезного действия к новому достижению.', teacher ? '<button class="btn" data-go="create">+ Создать задание</button>' : '') + `<div class="tabs">${tabs.map(([value, label]) => `<button data-tab="${value}" class="${taskTab === value ? 'active' : ''}">${label}</button>`).join('')}</div><div class="filters"><input id="task-search" aria-label="Поиск заданий" placeholder="Найти задание…" value="${esc(search)}"><select id="subject-filter" aria-label="Предмет">${['Все предметы', ...SUBJECTS.map(row => row[0]), 'Внеурочная деятельность'].map(name => `<option ${subjectFilter === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></div><section class="card task-list">${content || empty(taskTab === 'completed' ? 'Выполненных заданий пока нет' : taskTab === 'pending' ? 'Работ на проверке пока нет' : 'Заданий пока нет', 'Здесь появятся задания и их результаты.')}</section>`;
+  return heading('Задания', teacher ? 'Публикуйте задания и проверяйте результаты.' : 'От полезного действия к новому достижению.', teacher ? '<button class="btn" data-go="create">+ Создать задание</button>' : '') + `<div class="tabs">${tabs.map(([value, label]) => `<button data-tab="${value}" class="${taskTab === value ? 'active' : ''}">${label}</button>`).join('')}</div><div class="filters"><input id="task-search" aria-label="Поиск заданий" placeholder="Найти задание…" value="${esc(search)}"><select id="subject-filter" aria-label="Предмет">${['Все предметы', ...SUBJECTS.map(row => row[0]), 'Внеурочная деятельность'].map(name => `<option ${subjectFilter === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></div><section class="card task-list">${content || empty(taskTab === 'completed' ? 'Выполненных заданий пока нет' : taskTab === 'pending' ? 'Работ на проверке пока нет' : taskTab === 'declined' ? 'Отклонённых заданий пока нет' : 'Заданий пока нет', 'Здесь появятся задания и их результаты.')}</section>`;
 }
 function createTask() {
   return heading('Новое задание', 'Выберите, кому будет доступно задание.') + `<section class="card create-card"><form id="create-task-form"><label>Название<input name="title" required maxlength="120" placeholder="Что нужно сделать?"></label><label>Описание<textarea name="description" required maxlength="3000" placeholder="Опишите условия выполнения задания"></textarea></label><label>Как выполнить<textarea name="instructions" maxlength="2000" placeholder="Каждый шаг с новой строки"></textarea></label><div class="formrow"><label>Предмет<select name="subject">${[...(currentUser().subjects || []), 'Внеурочная деятельность'].map(name => `<option>${esc(name)}</option>`).join('')}</select></label><label>Баллы<input name="points" type="number" min="1" max="100" required placeholder="От 1 до 100"></label></div><label>Срок выполнения<input name="deadline" type="date" min="${today()}" required></label><div class="audience-box"><h3>Кому отправить</h3><label>Доступность<select name="targetType" id="audience-type"><option value="class">Всему классу</option><option value="parallel">Всей параллели</option><option value="student">Конкретному ученику</option></select></label><div id="audience-target"></div><p class="level-foot">Задание доступно только ученикам вашей школы. Уведомление придёт каждому получателю.</p></div><div class="modal-actions"><button type="button" class="btn outline" data-go="tasks">Отмена</button><button type="submit" class="btn">Опубликовать ↗</button></div><p class="form-error" role="alert"></p></form></section>`;
@@ -461,7 +486,7 @@ function profile() {
   const user = db.users.find(row => row.id === (requested || currentUser().id));
   if (!user) return heading('Профиль', 'Участник не найден.') + empty('Профиль недоступен');
   const own = user.id === currentUser().id;
-  const completed = db.submissions.filter(row => row.userId === user.id && row.status === 'approved').length;
+  const completed = user.completedCount ?? db.submissions.filter(row => row.userId === user.id && row.status === 'approved').length;
   const earned = experience(user.id);
   const awards = earnedAchievements(user);
   return heading(own ? 'Мой профиль' : 'Профиль участника', own ? 'Твоё пространство и участники школы.' : 'Достижения и предметы участника.', own ? '' : '<button class="btn outline" data-go="profile">← Мой профиль</button>') + `
@@ -540,16 +565,42 @@ function renderPhotos() {
   $$('[data-remove-photo]', box).forEach(button => button.onclick = () => { pendingPhotos.splice(+button.dataset.removePhoto, 1); renderPhotos(); });
 }
 async function imageData(file, size = 1000, quality = 0.78) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Выбери изображение JPG, PNG или WebP');
+  const type = file.type || ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp'})[file.name?.split('.').pop().toLowerCase()];
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) throw new Error('Выбери изображение JPG, PNG или WebP. Фото HEIC сначала сохрани как JPG.');
   if (file.size > 8 * 1024 * 1024) throw new Error('Размер одного фото — не более 8 МБ');
   const url = URL.createObjectURL(file);
   try {
     const image = new Image(); image.src = url; await image.decode();
     const ratio = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement('canvas'); canvas.width = Math.round(image.naturalWidth * ratio); canvas.height = Math.round(image.naturalHeight * ratio);
-    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    const context = canvas.getContext('2d');
+    if (!context || !canvas.width || !canvas.height) throw new Error('Не удалось обработать изображение. Выберите другое фото.');
+    context.fillStyle = '#f4effc'; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL('image/jpeg', quality);
   } finally { URL.revokeObjectURL(url); }
+}
+async function changeAvatar(file) {
+  if (avatarBusy || processing || !currentUser()) return;
+  const userId = currentUser().id;
+  avatarBusy = true;
+  const input = $('#avatar-upload'), remove = $('#remove-avatar');
+  if (input) input.disabled = true;
+  if (remove) remove.disabled = true;
+  toast(file ? 'Загружаем и сохраняем фото…' : 'Удаляем фото…');
+  try {
+    const photo = file ? await imageData(file, 320) : '';
+    await mutate(() => {
+      if (currentUser()?.id !== userId) throw new Error('Аккаунт изменился. Повторите загрузку в нужном профиле.');
+      currentUser().avatar = photo;
+    });
+    render(); toast(file ? 'Фото профиля сохранено' : 'Фото профиля удалено');
+  } catch (error) { toast(error.message); }
+  finally {
+    avatarBusy = false;
+    if (input?.isConnected) { input.disabled = false; input.value = ''; }
+    if (remove?.isConnected) remove.disabled = false;
+  }
 }
 async function sendSubmission(taskId, review, confirmed) {
   if (processing || photoBusy || !confirmed || !String(review).trim()) return;
@@ -569,18 +620,24 @@ async function sendSubmission(taskId, review, confirmed) {
   finally { processing = false; }
 }
 
-function reviewDialog(submissionId) {
+function reviewDialog(submissionId, draftComment = '') {
   const submission = db.submissions.find(row => row.id === submissionId);
   const task = db.tasks.find(row => row.id === submission?.taskId);
-  if (!isTeacher() || task?.teacherId !== currentUser().id || submission.status !== 'pending') return;
+  if (!isTeacher() || task?.teacherId !== currentUser().id || !submission) return;
   const user = db.users.find(row => row.id === submission.userId);
-  showModal(`<div class="sheet-header"><h2>Проверка задания</h2><button class="sheet-close" data-close aria-label="Закрыть">×</button></div><section class="detail-surface"><div class="detail-top"><span class="tile detail-icon">${subjectSymbol(task.subject)}</span><div><h2>${esc(task.title)}</h2><div class="meta"><span class="pill">${esc(task.subject)}</span><span class="points">✦ +${task.points} баллов</span></div></div></div><div class="review-author">${avatar(user)}<div><h3>${esc(user.name)}</h3><span>${esc(user.className)} класс</span></div></div><section class="review-evidence"><h3>Отзыв ученика</h3><p>${esc(submission.review)}</p><div class="evidence-gallery">${submission.photos.map((photo, index) => `<button class="evidence-image" data-view-photo="${index}"><img src="${photo}" alt="Фото результата ${index + 1}"></button>`).join('')}</div></section><label class="teacher-comment-label">Сообщение ученику <span class="meta">необязательно</span><textarea id="teacher-comment" maxlength="2000" placeholder="Что получилось и что нужно исправить"></textarea></label><p class="review-footnote">После подтверждения ученику начислятся баллы, обновятся уровень и рейтинг.</p><div class="review-actions"><button class="btn outline" id="revise-submission">На доработку</button><button class="btn outline" id="reject-submission">Отклонить</button><button class="btn" id="approve-submission">Подтвердить +${task.points}</button></div><p class="form-error" role="alert"></p></section>`, 'task-sheet review-sheet');
-  $('#approve-submission').onclick = () => decideSubmission(submissionId, 'approved');
-  $('#revise-submission').onclick = () => decideSubmission(submissionId, 'revision');
-  $('#reject-submission').onclick = () => decideSubmission(submissionId, 'rejected');
+  showModal(`<div class="sheet-header"><h2>Проверка задания</h2><button class="sheet-close" data-close aria-label="Закрыть">×</button></div><section class="detail-surface"><div class="detail-top"><span class="tile detail-icon">${subjectSymbol(task.subject)}</span><div><h2>${esc(task.title)}</h2><div class="meta"><span class="pill">${esc(task.subject)}</span><span class="points">✦ +${task.points} баллов</span></div></div></div><div class="review-author">${avatar(user)}<div><h3>${esc(user.name)}</h3><span>${esc(user.className)} класс</span></div></div><section class="review-evidence"><h3>Отзыв ученика</h3><p>${esc(submission.review)}</p><div class="evidence-gallery">${submission.photos.map((photo, index) => `<button class="evidence-image" data-view-photo="${index}"><img src="${photo}" alt="Фото результата ${index + 1}"></button>`).join('')}</div></section><label class="teacher-comment-label">Сообщение ученику <span class="meta">необязательно</span><textarea id="teacher-comment" maxlength="2000" placeholder="Что получилось и что нужно исправить">${esc(draftComment)}</textarea></label><p class="review-footnote">После подтверждения ученику начислятся баллы, обновятся уровень и рейтинг.</p><div class="review-actions"><button class="btn outline" id="revise-submission">На доработку</button><button class="btn outline" id="reject-submission">Отклонить</button><button class="btn" id="approve-submission">Подтвердить +${task.points}</button></div><p class="form-error" role="alert"></p></section>`, 'task-sheet review-sheet');
+  if (submission.status !== 'pending') {
+    $('.teacher-comment-label', modal).innerHTML = `<h3>Решение учителя</h3><p>${esc(({approved:'Подтверждено',revision:'На доработке',rejected:'Отклонено'})[submission.reviewOutcome] || statusText[submission.status])}</p><p>${esc(submission.teacherComment || 'Комментарий не добавлен')}</p>`;
+    $('.review-actions', modal).remove();
+    $('.review-footnote', modal).textContent = 'Работа уже проверена.';
+  }
+  $('#approve-submission')?.addEventListener('click', () => decideSubmission(submissionId, 'approved'));
+  $('#revise-submission')?.addEventListener('click', () => decideSubmission(submissionId, 'revision'));
+  $('#reject-submission')?.addEventListener('click', () => decideSubmission(submissionId, 'rejected'));
   $$('[data-view-photo]', modal).forEach(button => button.onclick = () => {
+    const comment = $('#teacher-comment')?.value || draftComment;
     showModal(`<div class="sheet-header"><button class="sheet-back" id="back-review">←</button><h2>Фото результата</h2><button class="sheet-close" data-close>×</button></div><img class="full-evidence" src="${submission.photos[+button.dataset.viewPhoto]}" alt="Фото результата">`, 'task-sheet');
-    $('#back-review').onclick = () => reviewDialog(submissionId);
+    $('#back-review').onclick = () => reviewDialog(submissionId, comment);
   });
 }
 async function decideSubmission(submissionId, outcome) {
@@ -611,8 +668,10 @@ function notificationDialog() {
   showModal(`<div class="sheet-header"><h2>Уведомления</h2><button class="sheet-close" data-close aria-label="Закрыть">×</button></div><div class="notification-list">${rows.map(row => `<button class="notification-item ${row.read ? '' : 'unread'}" data-notification="${row.id}"><span class="tile ${row.type === 'reward' ? 'green' : ''}">${row.type === 'reward' ? '✓' : row.type === 'exchange' ? '⇄' : '▤'}</span><span><strong>${esc(row.title)}</strong><small>${esc(row.text)}</small><time>${dateLabel(row.createdAt)}</time></span>${row.read ? '' : '<i></i>'}</button>`).join('') || empty('Уведомлений пока нет', 'Новые задания и достижения появятся здесь.')}</div>`, 'notifications-sheet');
   $$('[data-notification]', modal).forEach(button => button.onclick = async () => {
     const row = rows.find(item => item.id === button.dataset.notification);
+    try {
     await mutate(() => { const note = db.notifications.find(item => item.id === row.id); note.read = true; });
     closeModal(); go(row.target, row.type === 'reward' ? 'completed' : row.type === 'review' ? 'pending' : 'available');
+    } catch (error) { toast(error.message); }
   });
 }
 function maybeCelebrate() {
@@ -629,7 +688,7 @@ function maybeCelebrate() {
     <div class="celebrate-art"><span class="celebrate-ring"></span><span class="celebrate-check">${isLevel ? '🏆' : '✓'}</span>${particles}</div>
     <p class="celebrate-kicker">${isLevel ? 'ТВОЯ НОВАЯ ВЕРШИНА' : 'ТВОЁ ДЕЙСТВИЕ ИМЕЕТ ЗНАЧЕНИЕ'}</p>
     <h2>${isLevel ? 'Новый уровень!' : 'Отличная работа!'}</h2>
-    <p class="celebrate-description">${isLevel ? `Поздравляем, ${esc(currentUser().name.split(' ')[0])}!<br>Ты открыл(а) уровень <strong>«${esc(row.levelTitle)}»</strong>.` : `Учитель подтвердил задание<br><strong>${esc(ledger?.text || '')}</strong>`}</p>
+    <p class="celebrate-description">${isLevel ? `Поздравляем, ${esc(givenName(currentUser()))}!<br>Ты открыл(а) уровень <strong>«${esc(row.levelTitle)}»</strong>.` : `Учитель подтвердил задание<br><strong>${esc(ledger?.text || '')}</strong>`}</p>
     <div class="celebrate-points">${isLevel ? esc(row.levelTitle) : '+' + (ledger?.amount || 0)}<span>${isLevel ? 'Достижение сохранено в профиле' : 'баллов'}</span></div>
     <div class="celebrate-level">${points} баллов опыта · ${levelName(points)}</div>
     <button class="btn" id="reward-main">${isLevel ? 'Посмотреть достижения 🏅' : 'Открыть баланс ↗'}</button>
@@ -637,15 +696,18 @@ function maybeCelebrate() {
     'celebration-sheet' + (isLevel ? ' level-victory-sheet' : ''));
   rewardOpen = true;
   const acknowledge = async () => {
+    try {
     await mutate(() => {
       db.notifications.filter(note => note.userId === currentUser().id && (note.id === row.id || isLevel && (note.type === 'level' || note.eventId === 'approved:' + row.submissionId))).forEach(note => { note.celebrated = true; note.read = true; });
     });
     updateHeader();
+    return true;
+    } catch (error) { toast(error.message); return false; }
   };
-  $$('[data-close]', modal).forEach(button => button.onclick = async () => { await acknowledge(); closeModal(); });
-  $('#reward-main').onclick = async () => { await acknowledge(); closeModal(); if (isLevel) achievementDialog(currentUser().id); else go('exchange'); };
-  $('#reward-completed').onclick = async () => { await acknowledge(); closeModal(); if (isLevel) go('home'); else go('tasks','completed'); };
-  modal.oncancel = event => { event.preventDefault(); acknowledge().then(closeModal); };
+  $$('[data-close]', modal).forEach(button => button.onclick = async () => { if (await acknowledge()) closeModal(); });
+  $('#reward-main').onclick = async () => { if (!await acknowledge()) return; closeModal(); if (isLevel) achievementDialog(currentUser().id); else go('exchange'); };
+  $('#reward-completed').onclick = async () => { if (!await acknowledge()) return; closeModal(); if (isLevel) go('home'); else go('tasks','completed'); };
+  modal.oncancel = event => { event.preventDefault(); acknowledge().then(saved => { if (saved) closeModal(); }); };
 }
 
 
@@ -688,12 +750,12 @@ function bind() {
   $$('[data-detail]', app).forEach(button => button.onclick = () => taskDetail(button.dataset.detail));
   $$('[data-review]', app).forEach(button => button.onclick = () => reviewDialog(button.dataset.review));
   $$('[data-scope]', app).forEach(button => button.onclick = () => { ratingScope = button.dataset.scope; render(); });
-  $$('[data-subject]', app).forEach(button => button.onclick = () => { subjectFilter = button.dataset.subject; go('tasks', 'available'); });
+  $$('[data-subject]', app).forEach(button => button.onclick = () => openSubjectTasks(button.dataset.subject));
   $('#task-search')?.addEventListener('input', event => { search = event.target.value; const position = event.target.selectionStart; render(); $('#task-search').focus(); $('#task-search').setSelectionRange(position, position); });
   $('#subject-filter')?.addEventListener('change', event => { subjectFilter = event.target.value; render(); });
   $('#profile-logout')?.addEventListener('click', logout);
-  $('#avatar-upload')?.addEventListener('change', async event => { try { const file = event.target.files[0]; if (!file) return; const photo = await imageData(file, 320); await mutate(() => currentUser().avatar = photo); render(); } catch (error) { toast(error.message); } });
-  $('#remove-avatar')?.addEventListener('click', async () => { await mutate(() => currentUser().avatar = ''); render(); });
+  $('#avatar-upload')?.addEventListener('change', event => { const file = event.target.files[0]; if (file) changeAvatar(file); });
+  $('#remove-avatar')?.addEventListener('click', () => changeAvatar(null));
   const create = $('#create-task-form');
   if (create) {
     $('#audience-target').innerHTML = targetField('class');

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import urllib.request
 import urllib.error
 
@@ -15,6 +16,17 @@ import server
 
 
 class PublicOriginTests(unittest.TestCase):
+    def test_local_copy_session_isolation(self):
+        handler = object.__new__(server.Handler)
+        handler.server = SimpleNamespace(site='school', server_port=8765)
+        self.assertEqual(handler.cookie_name, 'maks_session')
+        handler.server.server_port = 8885
+        self.assertEqual(handler.cookie_name, 'maks_session_8885')
+        handler.server = SimpleNamespace(site='ministry', server_port=8767)
+        self.assertEqual(handler.cookie_name, 'maks_ministry_session')
+        handler.server.server_port = 8887
+        self.assertEqual(handler.cookie_name, 'maks_ministry_session_8887')
+
     def test_public_origin_and_cookies(self):
         with patch.object(server, 'PUBLIC_ORIGIN', 'https://showcase.example'), patch.object(
                 server.repository, 'login', return_value=({'userId': 'fictional'}, 'fake-session')):

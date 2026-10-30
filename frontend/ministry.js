@@ -65,17 +65,21 @@ function bindProvisioning() {
   const form=$('#ministry-import-form');
   if(form) {
     importSource='';importPreview=null;
-    const invalidate=()=>{importPreview=null;$('#create-package').disabled=true;$('#roster-preview').innerHTML='';};
-    form.onchange=invalidate;
+    let previewVersion=0;
+    const invalidate=()=>{previewVersion++;importPreview=null;$('#create-package',form).disabled=true;$('#roster-preview',form).innerHTML='';};
+    form.oninput=invalidate;form.onchange=invalidate;
     const fields=()=>{const data=Object.fromEntries(new FormData(form));const recipient=(admin?.recipients || [])[Number(data.recipient)];return {...data,...recipient,csv:importSource};};
     $('#preview-roster').onclick=async e=>{
       invalidate();$('.form-error',form).textContent='';
+      const version=previewVersion;
       const file=$('#roster-file').files[0];if(!file){$('.form-error',form).textContent='Выберите CSV-файл';return;}
       e.target.disabled=true;processing=true;
       try {
         if(file.size>300000)throw new Error('Файл должен быть не больше 300 КБ');
         const buffer=await file.arrayBuffer();try{importSource=new TextDecoder('utf-8',{fatal:true}).decode(buffer);}catch{importSource=new TextDecoder('windows-1251').decode(buffer);}
-        importPreview=await api('ministry/preview',fields());
+        const preview=await api('ministry/preview',fields());
+        if(version!==previewVersion || !form.isConnected)return;
+        importPreview=preview;
         $('#roster-preview').innerHTML=`<h3>Готово к созданию: ${importPreview.count}</h3>${importPreview.errors.length ? `<ul class="import-errors">${importPreview.errors.map(r=>`<li>Строка ${r.line}: ${esc(r.message)}</li>`).join('')}</ul>` : ''}<div class="roster-sample">${importPreview.rows.slice(0,12).map(r=>`<p>${esc(r.name)} · ${r.role==='teacher'?'Учитель':'Ученик · '+esc(r.className)}${r.legacyId?' · сохранится существующий профиль':''}</p>`).join('')}</div>${importPreview.count>12?'<p class="subtitle">Показаны первые 12 строк.</p>':''}`;
         $('#create-package').disabled=!!importPreview.errors.length || !importPreview.count;
       }catch(error){$('.form-error',form).textContent=error.message;}finally{processing=false;e.target.disabled=false;}
@@ -84,7 +88,7 @@ function bindProvisioning() {
       e.preventDefault();if(!importPreview || importPreview.errors.length || processing)return;
       processing=true;$('#create-package').disabled=true;$('#create-package').textContent='Создаём аккаунты и защищаем коды…';
       try{acceptState(await api('ministry/import',fields()));importSource='';importPreview=null;location.hash='ministryPackages';render();toast('Пакет создан. Проверьте и отправьте директору.');}
-      catch(error){$('.form-error',form).textContent=error.message;$('#create-package').disabled=false;$('#create-package').textContent='Создать аккаунты и пакет с кодами';}finally{processing=false;}
+      catch(error){$('.form-error',form).textContent=error.message;$('#create-package',form).disabled=false;$('#create-package',form).textContent='Создать аккаунты и пакет с кодами';}finally{processing=false;}
     };
   }
   $$('[data-ministry-reissue]',app).forEach(button=>button.onclick=()=>{

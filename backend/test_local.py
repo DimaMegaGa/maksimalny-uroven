@@ -52,6 +52,9 @@ class LocalTests(unittest.TestCase):
                 except BackendError:
                     pass
         cookie = 'maks_ministry_session' if site=='ministry' else 'maks_session'
+        port = self.ministry_server.server_port if site == 'ministry' else self.server.server_port
+        if port != (8767 if site == 'ministry' else 8765):
+            cookie += '_' + str(port)
         headers = {'X-Maks-Request': '1', 'Content-Type': 'application/json', 'Cookie': cookie+'=' + token}
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request((self.ministry_url if site=='ministry' else self.url) + route, data=data, headers=headers)
@@ -82,6 +85,23 @@ class LocalTests(unittest.TestCase):
         fields = dict(role=role,name=name,code=issued['code'])
         state, token = repository.login(fields)
         return fields, state, token
+
+    def test_avatar_persistence_and_validation(self):
+        _, state, token = self.make_account('student', 'Ученик Фото', 'Школа фото', '8А')
+        actor = next(u for u in state['db']['users'] if u['id'] == state['userId'])
+        photo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
+        status, raw, _ = self.request('/api/commit', {'revision': state['revision'], 'changes': {'users': [{**actor, 'avatar': photo}]}}, token)
+        self.assertEqual(status, 200, raw)
+        saved = Repository(repository.path).get_snapshot(token)
+        current = next(u for u in saved['db']['users'] if u['id'] == actor['id'])
+        self.assertEqual(current['avatar'], photo)
+        status, _, _ = self.request('/api/commit', {'revision': saved['revision'], 'changes': {'users': [{**current, 'avatar': 'data:image/png;base64,bm90LWFuLWltYWdl'}]}}, token)
+        self.assertEqual(status, 400)
+        saved = repository.get_snapshot(token)
+        self.assertEqual(next(u for u in saved['db']['users'] if u['id'] == actor['id'])['avatar'], photo)
+        status, raw, _ = self.request('/api/commit', {'revision': saved['revision'], 'changes': {'users': [{**current, 'avatar': ''}]}}, token)
+        self.assertEqual(status, 200, raw)
+        self.assertEqual(next(u for u in repository.get_snapshot(token)['db']['users'] if u['id'] == actor['id'])['avatar'], '')
 
     def test_end_to_end(self):
         status, _, _ = self.request('/api/state')
@@ -139,6 +159,8 @@ class LocalTests(unittest.TestCase):
             self.assertEqual(sorted(pool.map(concurrent_approval, range(2))), [200, 409])
         state = repository.get_snapshot(token)
         self.assertEqual(sum(r['amount'] for r in state['db']['ledger']), 60)
+        self.assertEqual(next(u for u in state['db']['users'] if u['id'] == student)['completedCount'], 1)
+        self.assertEqual(next(u for u in repository.get_snapshot(teacher_token)['db']['users'] if u['id'] == student)['completedCount'], 1)
         self.assertTrue(any(a['id'] == 'level-active' for u in state['db']['users'] if u['id'] == student for a in u['achievements']))
         self.assertTrue(any(n['type'] == 'level' for n in state['db']['notifications']))
         self.assertEqual({e['status'] for e in state['db']['activities']}, {'pending', 'approved'})
@@ -296,7 +318,7 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(self.request('/api/login',teacher_fields,site='ministry')[0],403)
         status, _, headers = self.request('/api/login',dict(role='ministry',code=mc),site='ministry')
         self.assertEqual(status,200)
-        self.assertTrue(headers['Set-Cookie'].startswith('maks_ministry_session='))
+        self.assertTrue(headers['Set-Cookie'].startswith(f'maks_ministry_session_{self.ministry_server.server_port}='))
         self.assertEqual(self.request('/api/state',token=mt,site='school')[0],401)
         self.assertEqual(self.request('/api/state',token=tt,site='ministry')[0],401)
         self.assertEqual(self.request('/api/state',token=mt,site='ministry')[0],200)
