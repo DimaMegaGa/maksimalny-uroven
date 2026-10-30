@@ -67,7 +67,7 @@ def seed():
     access.write_text(text, encoding='utf-8')
 
 
-def controller():
+def controller(provider):
     children, streams = [], []
     state = {'status': 'starting'}
     def save():
@@ -82,21 +82,35 @@ def controller():
             log.write_text('', encoding='utf-8')
             stream = (DATA / f'{site}-tunnel-console.log').open('ab')
             streams.append(stream)
-            tunnel = subprocess.Popen([str(BINARY), 'tunnel', '--url', f'http://127.0.0.1:{port}',
-                '--protocol', 'http2', '--no-autoupdate', '--logfile', str(log)],
+            if provider == 'serveo':
+                key = DATA / 'serveo-key'
+                if not key.exists():
+                    subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], check=True)
+                command = ['ssh', '-p', '443', '-T', '-i', str(key), '-o', 'IdentitiesOnly=yes',
+                    '-o', 'StrictHostKeyChecking=accept-new', '-o', f'UserKnownHostsFile={DATA / "known_hosts"}',
+                    '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+                    '-o', 'ExitOnForwardFailure=yes', '-R', f'80:127.0.0.1:{port}',
+                    '--', f'maks-{site}@serveo.net', '--https-only']
+                stream = log.open('ab')
+                streams.append(stream)
+            else:
+                command = [str(BINARY), 'tunnel', '--url', f'http://127.0.0.1:{port}',
+                    '--protocol', 'http2', '--no-autoupdate', '--logfile', str(log)]
+            tunnel = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                 stdout=stream, stderr=stream, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             children.append(tunnel)
             url = None
             for _ in range(90):
                 if STOP.exists() or tunnel.poll() is not None:
                     raise RuntimeError('Tunnel stopped before its URL was assigned')
-                match = re.search(r'https://[a-z0-9-]+\.trycloudflare\.com', log.read_text(encoding='utf-8', errors='replace'))
+                pattern = r'https://[a-z0-9-]+\.(?:trycloudflare\.com|serveousercontent\.com|serveo\.net)'
+                match = re.search(pattern, log.read_text(encoding='utf-8', errors='replace'))
                 if match:
                     url = match[0]
                     break
                 time.sleep(1)
             if not url:
-                raise RuntimeError('Cloudflare did not return a URL; see tunnel logs')
+                raise RuntimeError('Tunnel did not return a URL; see tunnel logs')
             environment = os.environ.copy()
             environment['MAKS_PUBLIC_ORIGIN'] = url
             stream = (DATA / f'{site}-server.log').open('ab')
@@ -123,7 +137,9 @@ def controller():
             online = []
             for site in ('school', 'ministry'):
                 try:
-                    with urllib.request.urlopen(state[site] + '/api/health', timeout=4) as response:
+                    request = urllib.request.Request(state[site] + '/api/health',
+                        headers={'serveo-skip-browser-warning': 'true'})
+                    with urllib.request.urlopen(request, timeout=4) as response:
                         online.append(json.load(response).get('site') == site)
                 except (OSError, ValueError):
                     online.append(False)
@@ -159,6 +175,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--stop', action='store_true')
     parser.add_argument('--serve', action='store_true')
+    parser.add_argument('--provider', choices=('serveo', 'cloudflare'), default='serveo')
     args = parser.parse_args()
     DATA.mkdir(parents=True, exist_ok=True)
     if args.stop:
@@ -166,19 +183,19 @@ def main():
         print('Остановка показа запрошена. Основные локальные сайты не затрагиваются.')
         return
     if args.serve:
-        controller()
+        controller(args.provider)
         return
     if STATE.exists():
         state = json.loads(STATE.read_text(encoding='utf-8'))
         if state.get('status') == 'ready' and time.time()-state.get('heartbeat', 0) < 15:
             print('Школа:', state['school'], '\nМинистерство:', state['ministry'])
             return
-    if not BINARY.exists():
+    if args.provider == 'cloudflare' and not BINARY.exists():
         raise SystemExit('Нужен официальный cloudflared: tools/cloudflared.exe. См. SHOWCASE-HTTPS.md.')
     STOP.unlink(missing_ok=True)
     STATE.write_text(json.dumps({'status': 'starting'}), encoding='utf-8')
     with (DATA / 'controller.log').open('ab') as stream:
-        child = subprocess.Popen([sys.executable, '-u', str(Path(__file__)), '--serve'], cwd=ROOT,
+        child = subprocess.Popen([sys.executable, '-u', str(Path(__file__)), '--serve', '--provider', args.provider], cwd=ROOT,
             stdout=stream, stderr=stream, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     for _ in range(420):
         if STATE.exists():
