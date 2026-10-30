@@ -12,5 +12,8 @@ if __name__ == '__main__':
         key.write_bytes(Fernet.generate_key())
         os.environ['MAKS_VAULT_KEY_FILE'] = str(key)
         import test_local
-        result = unittest.main(module=test_local, exit=False).result
+        import test_public_origin
+        suite = unittest.defaultTestLoader.loadTestsFromModule(test_local)
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(test_public_origin))
+        result = unittest.TextTestRunner().run(suite)
     raise SystemExit(0 if result.wasSuccessful() else 1)

@@ -14,3 +14,4 @@ runtime/
 *.db
 *.tar
 *.tar.gz
+tools/

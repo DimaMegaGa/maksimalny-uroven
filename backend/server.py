@@ -17,6 +17,11 @@ FRONTEND = Path(__file__).resolve().parent.parent / 'frontend'
 CONTROL = repository.path.parent / 'server-control.json'
 CONTROL_TOKEN = secrets.token_urlsafe(32)
 PUBLIC_ICONS = {'/assets/' + path.name for path in (FRONTEND / 'assets').glob('*.png')}
+PUBLIC_ORIGIN = os.environ.get('MAKS_PUBLIC_ORIGIN', '').rstrip('/')
+if PUBLIC_ORIGIN and (urlsplit(PUBLIC_ORIGIN).scheme != 'https' or
+                      PUBLIC_ORIGIN != 'https://' + urlsplit(PUBLIC_ORIGIN).netloc or
+                      urlsplit(PUBLIC_ORIGIN).username):
+    raise ValueError('MAKS_PUBLIC_ORIGIN must be an exact HTTPS origin')
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -105,10 +110,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            if self.headers.get('Host') not in (f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'):
+            host = self.headers.get('Host')
+            public = bool(PUBLIC_ORIGIN and host == urlsplit(PUBLIC_ORIGIN).netloc)
+            if not public and host not in (f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'):
                 raise BackendError('Недопустимый адрес сервера', 403)
             origin = self.headers.get('Origin')
-            if origin and urlsplit(origin).netloc != self.headers.get('Host'):
+            if (public and origin != PUBLIC_ORIGIN or
+                    not public and origin and origin not in (f'http://{host}', f'https://{host}')):
                 raise BackendError('Недопустимый источник запроса', 403)
             if self.headers.get('X-Maks-Request') != '1':
                 raise BackendError('Недопустимый запрос', 403)
@@ -119,6 +127,8 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise BackendError('Ожидается JSON-объект')
             path = urlsplit(self.path).path
+            if public and path == '/api/shutdown':
+                raise BackendError('Остановка доступна только локально', 403)
             if self.site != 'ministry' and (path.startswith('/api/ministry/') or path == '/api/packages/send'):
                 raise BackendError('Эта функция доступна на сайте министерства', 404)
             if self.site == 'ministry' and (path.startswith('/api/director/') or path in ('/api/commit', '/api/packages/distribute')):
@@ -129,7 +139,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if (body.get('role') == 'ministry') != (self.site == 'ministry'):
                     raise BackendError('Используйте отдельный сайт министерства' if self.site == 'school' else 'Здесь доступен только вход министерства', 403)
                 snapshot, token = repository.login(body, client=self.client_address[0])
-                secure = '; Secure' if os.environ.get('MAKS_SECURE_COOKIE') == '1' else ''
+                secure = '; Secure' if public or os.environ.get('MAKS_SECURE_COOKIE') == '1' else ''
                 max_age = 28800 if body.get('role') in ('director', 'ministry') else 604800
                 self.reply(200, snapshot, f'{self.cookie_name}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={max_age}' + secure)
             elif path == '/api/director/accounts':
