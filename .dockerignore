@@ -3,7 +3,10 @@
 !backend/
 !backend/*.py
 !backend/schema.sql
+!backend/russian_trusted_root_ca.pem
 !frontend/
 !frontend/**
 !templates/
 !templates/**
+!scripts/
+!scripts/deliver_max_notifications.py

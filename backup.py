@@ -1,4 +1,5 @@
 """Consistent SQLite online backup; works while the local server is running."""
+
 import sqlite3
 from datetime import datetime
 from pathlib import Path

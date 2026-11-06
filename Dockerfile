@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --crea
 COPY backend ./backend
 COPY frontend ./frontend
 COPY templates ./templates
+COPY scripts/deliver_max_notifications.py ./scripts/deliver_max_notifications.py
 USER maks
 EXPOSE 8765 8767
 ENTRYPOINT ["python", "backend/container_start.py"]

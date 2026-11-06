@@ -3,14 +3,20 @@ from repository import repository, BackendError
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Локальная выдача кодов директора. Через сайт эта операция недоступна.')
+    parser = argparse.ArgumentParser(
+        description='Локальная выдача кодов директора. Через сайт эта операция недоступна.'
+    )
     commands = parser.add_subparsers(dest='command', required=True)
-    create = commands.add_parser('create-director', help='Создать директора и назначить его организации')
+    create = commands.add_parser(
+        'create-director', help='Создать директора и назначить его организации'
+    )
     create.add_argument('--school', action='append')
     create.add_argument('--label', default='Директор')
     create.add_argument('--interactive', action='store_true')
     commands.add_parser('list-directors', help='Показать идентификаторы директоров без кодов')
-    rotate = commands.add_parser('reset-director', help='Выдать новый код и отозвать старые сеансы директора')
+    rotate = commands.add_parser(
+        'reset-director', help='Выдать новый код и отозвать старые сеансы директора'
+    )
     rotate.add_argument('--id', required=True)
     rotate.add_argument('--interactive', action='store_true')
     args = parser.parse_args()
@@ -24,8 +30,12 @@ def main():
         schools = args.school
         if not schools:
             print('Локальная настройка. Код не выдан Министерством образования.')
-            print('Укажите точное название школы. Для нескольких организаций разделите названия точкой с запятой.')
-            schools = [s.strip() for s in input('Образовательная организация: ').split(';') if s.strip()]
+            print(
+                'Укажите точное название школы. Для нескольких организаций разделите названия точкой с запятой.'
+            )
+            schools = [
+                s.strip() for s in input('Образовательная организация: ').split(';') if s.strip()
+            ]
         director_id, code = repository.bootstrap_director(schools, args.label)
     else:
         director_id = args.id

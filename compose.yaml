@@ -1,9 +1,10 @@
+name: maks-demo-alwaysdata
 services:
   school:
-    image: maks-level:local
+    image: maks-level:demo-alwaysdata
     build: .
     ports:
-      - "127.0.0.1:8765:8765"
+      - "127.0.0.1:19111:8765"
     volumes:
       - maks-data:/data
     healthcheck:
@@ -12,13 +13,13 @@ services:
       timeout: 5s
       retries: 3
   ministry:
-    image: maks-level:local
+    image: maks-level:demo-alwaysdata
     command: ["--site", "ministry", "--port", "8767"]
     depends_on:
       school:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8767:8767"
+      - "127.0.0.1:19112:8767"
     volumes:
       - maks-data:/data
 volumes:

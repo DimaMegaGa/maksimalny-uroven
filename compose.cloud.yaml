@@ -1,0 +1,65 @@
+services:
+  school:
+    image: maks-level:cloud
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      MAKS_PUBLIC_ORIGIN: https://${SCHOOL_DOMAIN:?Set SCHOOL_DOMAIN}
+      MAKS_SECURE_COOKIE: "1"
+    volumes:
+      - maks-cloud-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  ministry:
+    image: maks-level:cloud
+    command: ["--site", "ministry", "--port", "8767"]
+    restart: unless-stopped
+    init: true
+    environment:
+      MAKS_PUBLIC_ORIGIN: https://${MINISTRY_DOMAIN:?Set MINISTRY_DOMAIN}
+      MAKS_SECURE_COOKIE: "1"
+    volumes:
+      - maks-cloud-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      school:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8767/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SCHOOL_DOMAIN: ${SCHOOL_DOMAIN:?Set SCHOOL_DOMAIN}
+      MINISTRY_DOMAIN: ${MINISTRY_DOMAIN:?Set MINISTRY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/Caddyfile:/etc/caddy/Caddyfile:ro
+      - maks-tls-data:/data
+      - maks-tls-config:/config
+    depends_on:
+      school:
+        condition: service_healthy
+      ministry:
+        condition: service_healthy
+volumes:
+  maks-cloud-data:
+  maks-tls-data:
+  maks-tls-config:
