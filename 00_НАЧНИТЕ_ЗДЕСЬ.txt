@@ -86,4 +86,3 @@
 https://github.com/DimaMegaGa/maksimalny-uroven
 Docker-образ в релизе jury-v1.0.1
 https://github.com/DimaMegaGa/maksimalny-uroven/releases/tag/jury-v1.0.1
-Доступ к приватному репозиторию выдаёт владелец.
